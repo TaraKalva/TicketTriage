@@ -65,18 +65,6 @@ function normalize(result, description) {
   return { category, severity, team, confidence, reasoning, source: result.source ?? 'ai' };
 }
 
-async function classifyWithAnthropic(description) {
-  const { default: Anthropic } = await import('@anthropic-ai/sdk');
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const msg = await client.messages.create({
-    model: 'claude-sonnet-5',
-    max_tokens: 300,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: `Ticket description:\n"""${description}"""` }],
-  });
-  const text = msg.content.map((block) => (block.type === 'text' ? block.text : '')).join('');
-  return extractJson(text);
-}
 
 async function classifyWithOpenAI(description) {
   const { default: OpenAI } = await import('openai');
@@ -174,10 +162,6 @@ export async function triageTicket(description) {
       const raw = await classifyWithGemini(description);
       return normalize({ ...raw, source: 'gemini' }, description);
     }
-    if (process.env.ANTHROPIC_API_KEY) {
-      const raw = await classifyWithAnthropic(description);
-      return normalize({ ...raw, source: 'anthropic' }, description);
-    }
     if (process.env.OPENAI_API_KEY) {
       const raw = await classifyWithOpenAI(description);
       return normalize({ ...raw, source: 'openai' }, description);
@@ -219,18 +203,6 @@ function buildPredictionPrompt({ trendSummary, examples }) {
   return `Recent ticket volume trend by category:\n${trendSummary}\n\nRecent example tickets from the highest-signal category:\n${examplesBlock}`;
 }
 
-async function predictWithAnthropic(prompt) {
-  const { default: Anthropic } = await import('@anthropic-ai/sdk');
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const msg = await client.messages.create({
-    model: 'claude-sonnet-5',
-    max_tokens: 400,
-    system: PREDICTION_SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: prompt }],
-  });
-  const text = msg.content.map((block) => (block.type === 'text' ? block.text : '')).join('');
-  return extractJson(text);
-}
 
 async function predictWithOpenAI(prompt) {
   const { default: OpenAI } = await import('openai');
@@ -302,10 +274,6 @@ export async function predictNextTicket({ targetCategory, targetTeam, targetSeve
     if (process.env.GEMINI_API_KEY) {
       const raw = await predictWithGemini(prompt);
       return normalizePrediction({ ...raw, source: 'gemini' }, { fallbackCategory: targetCategory, fallbackTeam: targetTeam });
-    }
-    if (process.env.ANTHROPIC_API_KEY) {
-      const raw = await predictWithAnthropic(prompt);
-      return normalizePrediction({ ...raw, source: 'anthropic' }, { fallbackCategory: targetCategory, fallbackTeam: targetTeam });
     }
     if (process.env.OPENAI_API_KEY) {
       const raw = await predictWithOpenAI(prompt);

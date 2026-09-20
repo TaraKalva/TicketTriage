@@ -11,7 +11,6 @@
     "generate-traffic": "node src/db/generateTraffic.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.32.1",
     "@google/genai": "^2.23.0",
     "better-sqlite3": "^11.7.0",
     "cors": "^2.8.5",

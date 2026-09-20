@@ -8,7 +8,7 @@ predicts the next likely incoming ticket from recent trends.
 
 - **Backend:** Node.js / Express, SQLite (`better-sqlite3`), `node-cron`
 - **Frontend:** React (Vite), Tailwind CSS, Chart.js
-- **AI:** Google Gemini (free tier), Anthropic Claude, or OpenAI (auto-detected from env vars, in that
+- **AI:** Google Gemini (free tier) or OpenAI (auto-detected from env vars, in that
   priority order), with a built-in rule-based fallback classifier so the app works fully with no API key
 - **Data:** imported from `server/data/synthetic_it_support_tickets.csv` (100k real-shaped support tickets)
 
@@ -22,8 +22,8 @@ Configure AI (optional):
 
 ```bash
 cp server/.env.example server/.env
-# then edit server/.env and set GEMINI_API_KEY (free — https://aistudio.google.com/apikey),
-# ANTHROPIC_API_KEY, or OPENAI_API_KEY
+# then edit server/.env and set GEMINI_API_KEY (free — https://aistudio.google.com/apikey)
+# or OPENAI_API_KEY
 ```
 
 If no key is set, the triage engine automatically falls back to a keyword-based rule classifier —

@@ -7,3 +7,4 @@ build/
 server/data/*.sqlite*
 *.sqlite*
 .DS_Store
+.claude/
