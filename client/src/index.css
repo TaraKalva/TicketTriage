@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light dark;
+}
+
+html {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  scroll-behavior: smooth;
+}
+
+body {
+  color: #1e293b;
+  background-color: #f5faff;
+  background-image:
+    radial-gradient(at 0% 0%, rgba(186, 230, 253, 0.55) 0, transparent 55%),
+    radial-gradient(at 100% 0%, rgba(147, 197, 253, 0.4) 0, transparent 55%),
+    radial-gradient(at 100% 100%, rgba(165, 243, 252, 0.35) 0, transparent 55%),
+    radial-gradient(at 0% 100%, rgba(191, 219, 254, 0.35) 0, transparent 55%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+/* Written as plain CSS (not @apply dark:...) — mixing @apply variants with plain
+   properties in this rule silently dropped the dark: declarations under Tailwind v4's
+   custom dark variant, leaving the body permanently light even with .dark on <html>. */
+:root.dark body {
+  background-color: #020617;
+  background-image: none;
+  color: #f1f5f9;
+}
+
+h1, h2, h3, .tracking-tightest {
+  letter-spacing: -0.03em;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  /* Plain CSS, not @apply dark:... — Tailwind can't attach the dark variant's
+     :where(.dark, .dark *) to a ::-webkit- pseudo-element selector correctly here
+     (it compiles to an empty, non-matching :where()), so the dark color never applied. */
+  background-color: #bae6fd;
+  border-radius: 9999px;
+}
+:root.dark ::-webkit-scrollbar-thumb {
+  background-color: #334155;
+}
+
+/* Ambient blurred gradient orbs, Apple-hero style. Fixed + behind everything. */
+.ambient-orb {
+  position: fixed;
+  border-radius: 9999px;
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.55;
+}
+:root.dark .ambient-orb {
+  opacity: 0.12;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0) translateX(0); }
+  50% { transform: translateY(-18px) translateX(10px); }
+}
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1), transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.reveal.reveal-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.animate-float {
+  animation: floatSlow 9s ease-in-out infinite;
+}
+
+.glass {
+  /* Plain CSS, not @apply dark:... — Tailwind v4's dev-mode incremental compiler
+     (unlike its production build) doesn't reliably emit the dark-variant copy of a
+     custom-variant utility applied inside a custom class, so the override silently
+     never showed up while running `vite dev`. Confirmed via direct dev-server
+     stylesheet inspection: only the light rule existed, even after a full cache
+     clear + restart. */
+  background-color: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+:root.dark .glass {
+  background-color: rgba(15, 23, 42, 0.7) !important;
+}
+
+.press {
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.press:active {
+  transform: scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+  .animate-float { animation: none; }
+}
