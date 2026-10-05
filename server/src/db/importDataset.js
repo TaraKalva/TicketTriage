@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 import { parse } from 'csv-parse/sync';
 import db from './index.js';
 
@@ -68,8 +69,19 @@ function run() {
   const { clear, limit, csvPath } = parseArgs(process.argv.slice(2));
 
   if (!fs.existsSync(csvPath)) {
-    console.error(`Dataset CSV not found at ${csvPath}`);
-    process.exit(1);
+    if (csvPath === DEFAULT_CSV_PATH) {
+      console.log(`Dataset CSV not found at ${csvPath}. Fetching from Kaggle via kagglehub...`);
+      try {
+        const scriptPath = path.join(__dirname, '..', '..', '..', 'scripts', 'pull_kaggle_data.py');
+        execSync(`python3 "${scriptPath}"`, { stdio: 'inherit' });
+      } catch (err) {
+        console.error('Failed to fetch dataset from Kaggle automatically:', err.message);
+        process.exit(1);
+      }
+    } else {
+      console.error(`Dataset CSV not found at ${csvPath}`);
+      process.exit(1);
+    }
   }
 
   console.log(`Reading ${csvPath}...`);

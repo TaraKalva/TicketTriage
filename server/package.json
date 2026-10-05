@@ -8,7 +8,8 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "import-data": "node src/db/importDataset.js --clear",
-    "generate-traffic": "node src/db/generateTraffic.js"
+    "generate-traffic": "node src/db/generateTraffic.js",
+    "fetch:kaggle": "cd .. && (./.venv/bin/python scripts/pull_kaggle_data.py || python3 scripts/pull_kaggle_data.py)"
   },
   "dependencies": {
     "@google/genai": "^2.23.0",

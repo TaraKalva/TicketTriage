@@ -86,16 +86,33 @@ async function classifyWithOpenAI(description) {
 async function classifyWithGemini(description) {
   const { GoogleGenAI } = await import('@google/genai');
   const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const response = await client.models.generateContent({
-    model,
-    contents: `Ticket description:\n"""${description}"""`,
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      responseMimeType: 'application/json',
-    },
-  });
-  return extractJson(response.text);
+  const models = [
+    process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash-lite',
+  ];
+
+  let lastErr = null;
+  for (const model of models) {
+    try {
+      const response = await client.models.generateContent({
+        model,
+        contents: `Ticket description:\n"""${description}"""`,
+        config: {
+          systemInstruction: SYSTEM_PROMPT,
+          responseMimeType: 'application/json',
+        },
+      });
+      return extractJson(response.text);
+    } catch (err) {
+      lastErr = err;
+      if (err.status === 503 || err.message?.includes('503') || err.message?.includes('404')) {
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
 }
 
 const KEYWORD_RULES = [
@@ -222,16 +239,33 @@ async function predictWithOpenAI(prompt) {
 async function predictWithGemini(prompt) {
   const { GoogleGenAI } = await import('@google/genai');
   const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const response = await client.models.generateContent({
-    model,
-    contents: prompt,
-    config: {
-      systemInstruction: PREDICTION_SYSTEM_PROMPT,
-      responseMimeType: 'application/json',
-    },
-  });
-  return extractJson(response.text);
+  const models = [
+    process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash-lite',
+  ];
+
+  let lastErr = null;
+  for (const model of models) {
+    try {
+      const response = await client.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+          systemInstruction: PREDICTION_SYSTEM_PROMPT,
+          responseMimeType: 'application/json',
+        },
+      });
+      return extractJson(response.text);
+    } catch (err) {
+      lastErr = err;
+      if (err.status === 503 || err.message?.includes('503') || err.message?.includes('404')) {
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
 }
 
 function normalizePrediction(result, { fallbackCategory, fallbackTeam }) {

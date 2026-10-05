@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Line, Doughnut, Bar } from 'react-chartjs-2';
 import Card from '../components/Card.jsx';
 import Reveal from '../components/Reveal.jsx';
@@ -48,10 +49,10 @@ export default function Dashboard() {
       <Reveal className="flex flex-wrap items-end justify-between gap-5">
         <div>
           <h1 className="text-4xl md:text-5xl font-semibold tracking-tightest text-slate-900 dark:text-white">
-            Dashboard
+            Operational Dashboard
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-2 text-base md:text-lg">
-            Ticket volume, severity, category performance, and proactive risk flags.
+            Real-time ticket triage metrics, volume trends, proactive risk flags, and AI predictive insights.
           </p>
         </div>
         <button
@@ -59,84 +60,136 @@ export default function Dashboard() {
           disabled={recomputing}
           className="press inline-flex items-center gap-1.5 rounded-full glass border border-white/60 dark:border-slate-700 px-5 py-2.5 text-sm font-medium text-sky-700 dark:text-slate-200 hover:bg-white/90 dark:hover:bg-slate-700 disabled:opacity-50 transition-all shadow-sm"
         >
-          {recomputing ? 'Recomputing...' : '✨ Recompute AI insights'}
+          {recomputing ? (
+            <>
+              <Spinner /> Recomputing...
+            </>
+          ) : (
+            '✨ Recompute AI Insights'
+          )}
         </button>
       </Reveal>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* KPI Metric Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <Reveal delay={0}>
-          <StatCard label="Total tickets" value={totals.total} accent="blue" />
+          <StatCard label="Total Tickets" value={totals.total} accent="blue" />
         </Reveal>
-        <Reveal delay={60}>
-          <StatCard label="Open" value={totals.open} accent="sky" />
+        <Reveal delay={50}>
+          <StatCard label="Open Tickets" value={totals.open} accent="sky" />
         </Reveal>
-        <Reveal delay={120}>
-          <StatCard label="Resolved" value={totals.resolved} accent="emerald" />
+        <Reveal delay={100}>
+          <StatCard label="Resolved Tickets" value={totals.resolved} accent="emerald" />
         </Reveal>
-        <Reveal delay={180}>
-          <StatCard label="Needs review" value={totals.needsReview} accent="pink" />
+        <Reveal delay={150}>
+          <StatCard label="Needs Review" value={totals.needsReview} accent="pink" />
+        </Reveal>
+        <Reveal delay={200}>
+          <Card hover>
+            <p className="text-sm text-slate-400 mb-1">Avg Resolution</p>
+            <p className="text-3xl font-semibold tracking-tight tabular-nums text-indigo-500 dark:text-indigo-400">
+              {formatMinutes(totals.avgResolutionMinutes)}
+            </p>
+          </Card>
         </Reveal>
       </div>
 
+      {/* Proactive Risk Flags (Feature F6 & Task 3) */}
+      {risingScores.length > 0 && (
+        <Reveal>
+          <Card
+            className="border-amber-300/80 dark:border-amber-500/30 bg-gradient-to-br from-amber-50/90 to-orange-50/50 dark:from-amber-500/10 dark:to-slate-900"
+            title="⚠️ Proactive Pattern & Risk Detection"
+            subtitle="Categories with surging ticket volume vs. prior period — flagged to prevent larger operational incidents"
+          >
+            <div className="grid sm:grid-cols-2 gap-4 mt-2">
+              {risingScores.map((s) => {
+                const pctSurge = s.priorCount > 0 ? Math.round(((s.recentCount - s.priorCount) / s.priorCount) * 100) : 100;
+                return (
+                  <div
+                    key={s.category}
+                    className="rounded-2xl border border-amber-200 dark:border-amber-500/20 bg-white/90 dark:bg-slate-900 p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="font-semibold text-base text-slate-900 dark:text-slate-100">
+                          {s.category}
+                        </span>
+                        <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">
+                          +{pctSurge}% Surge
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                        Volume increased from <strong className="text-slate-700 dark:text-slate-200">{s.priorCount}</strong> (prior 7 days) to <strong className="text-amber-600 dark:text-amber-400">{s.recentCount}</strong> (last 7 days).
+                      </p>
+                      <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">
+                        {s.recommendation}
+                      </p>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                      <span className="text-xs text-slate-400">Actionable triage lead</span>
+                      <Link
+                        to={`/tickets?category=${encodeURIComponent(s.category)}`}
+                        className="text-xs font-semibold text-sky-600 dark:text-sky-400 hover:text-sky-700 flex items-center gap-1"
+                      >
+                        Investigate Tickets →
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        </Reveal>
+      )}
+
+      {/* AI Next Ticket Prediction (Feature F6) */}
       {prediction && (
         <Reveal>
           <Card
             hover
-            className="border-sky-200/70 dark:border-sky-500/30 bg-gradient-to-br from-sky-50 to-cyan-50/60 dark:from-slate-900 dark:to-slate-900"
-            title="🔮 Predicted next ticket"
-            subtitle="AI forecast grounded in recent ticket volume trends and real examples from the highest-signal category"
+            className="border-sky-300/80 dark:border-sky-500/30 bg-gradient-to-br from-sky-50 to-indigo-50/50 dark:from-slate-900 dark:to-slate-900"
+            title="🔮 AI Predictive Ticket Forecast"
+            subtitle="Forecast grounded in recent ticket volume trends and ground-truth patterns from the highest-signal category"
           >
             <div className="flex flex-wrap items-center gap-2 mb-3">
               <CategoryBadge category={prediction.category} />
               <SeverityBadge severity={prediction.severity} />
-              <span className="text-xs text-slate-400">{prediction.team}</span>
-              <span className="ml-auto text-xs font-medium text-sky-600 dark:text-sky-400">
-                {Math.round(prediction.confidence * 100)}% confidence
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200">
+                Target Team: {prediction.team}
+              </span>
+              <span className="ml-auto text-xs font-semibold text-sky-600 dark:text-sky-400">
+                {Math.round(prediction.confidence * 100)}% Confidence
               </span>
             </div>
-            <p className="text-base text-slate-700 dark:text-slate-200 italic">"{prediction.predictedDescription}"</p>
+            <div className="rounded-xl p-3.5 bg-white/80 dark:bg-slate-800/80 border border-sky-100 dark:border-slate-700">
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                Predicted Incoming Description
+              </p>
+              <p className="text-base text-slate-800 dark:text-slate-200 italic font-medium">
+                "{prediction.predictedDescription}"
+              </p>
+            </div>
             {prediction.rationale && (
-              <p className="text-xs text-slate-400 mt-2 whitespace-pre-line">{prediction.rationale}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 whitespace-pre-line bg-sky-50/50 dark:bg-slate-900/50 p-2.5 rounded-lg border border-sky-100/50 dark:border-slate-800">
+                <strong className="text-slate-700 dark:text-slate-300 font-semibold block mb-0.5">Forecast Rationale:</strong>
+                {prediction.rationale}
+              </p>
             )}
           </Card>
         </Reveal>
       )}
 
-      {risingScores.length > 0 && (
-        <Reveal>
-          <Card
-            className="border-amber-300/60 dark:border-amber-500/30 bg-gradient-to-br from-amber-50/80 to-orange-50/40 dark:from-amber-500/10 dark:to-slate-900"
-            title="⚠ Proactive risk flags"
-            subtitle="Categories trending upward vs. the prior period — computed by the scheduled analysis job"
-          >
-            <div className="grid sm:grid-cols-2 gap-3">
-              {risingScores.map((s) => (
-                <div
-                  key={s.category}
-                  className="rounded-2xl border border-amber-200 dark:border-amber-500/20 bg-white/80 dark:bg-slate-900 p-4 transition-transform hover:-translate-y-0.5"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-medium text-slate-800 dark:text-slate-100">{s.category}</span>
-                    <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
-                      {s.priorCount} → {s.recentCount}
-                    </span>
-                  </div>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">{s.recommendation}</p>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </Reveal>
-      )}
-
+      {/* Charts Grid */}
       <div className="grid lg:grid-cols-3 gap-5">
         <Reveal className="lg:col-span-2">
-          <Card title="Ticket volume" subtitle="Last 14 days">
+          <Card title="Ticket Volume Trend" subtitle="Daily ticket counts over the last 14 days">
             <VolumeChart volumeByDay={volumeByDay} />
           </Card>
         </Reveal>
         <Reveal delay={80}>
-          <Card title="Severity breakdown">
+          <Card title="Severity Distribution" subtitle="All-time ticket priority breakdown">
             <SeverityChart severityBreakdown={severityBreakdown} />
           </Card>
         </Reveal>
@@ -144,58 +197,78 @@ export default function Dashboard() {
 
       <div className="grid lg:grid-cols-3 gap-5">
         <Reveal className="lg:col-span-2">
-          <Card title="Category performance" subtitle="Ticket count by category">
+          <Card title="Category Performance" subtitle="Total volume, active tickets, and resolution metrics by area">
             <CategoryChart categoryPerformance={categoryPerformance} />
           </Card>
         </Reveal>
+
         <Reveal delay={80}>
-          <Card title="Insights">
-            <div className="space-y-4">
+          <Card title="Key Operational Insights" subtitle="Highlights from triage metrics">
+            <div className="space-y-4 pt-2">
               <InsightRow
-                label="Most common category"
-                value={insights.mostCommonCategory?.category ?? '—'}
-                detail={insights.mostCommonCategory ? `${insights.mostCommonCategory.total} tickets` : null}
+                label="Highest Volume Area"
+                value={insights?.mostCommonCategory?.category ?? '—'}
+                detail={insights?.mostCommonCategory ? `${insights.mostCommonCategory.total.toLocaleString()} total tickets` : null}
               />
               <InsightRow
-                label="Slowest to resolve"
-                value={insights.slowestCategory?.category ?? '—'}
-                detail={
-                  insights.slowestCategory
-                    ? `${formatMinutes(insights.slowestCategory.avgResolutionMinutes)} avg`
-                    : null
-                }
+                label="Longest Resolution Time"
+                value={insights?.slowestCategory?.category ?? '—'}
+                detail={insights?.slowestCategory ? `Avg ${formatMinutes(insights.slowestCategory.avgResolutionMinutes)}` : null}
               />
               <InsightRow
-                label="Risk scan last run"
-                value={riskScores.computedAt ? new Date(riskScores.computedAt).toLocaleTimeString() : 'Not yet run'}
-                detail={riskScores.computedAt ? new Date(riskScores.computedAt).toLocaleDateString() : null}
+                label="Resolution Rate"
+                value={totals.total > 0 ? `${Math.round((totals.resolved / totals.total) * 100)}%` : '—'}
+                detail={`${totals.resolved.toLocaleString()} of ${totals.total.toLocaleString()} resolved`}
+              />
+              <InsightRow
+                label="Review Queue Backlog"
+                value={`${totals.needsReview} tickets`}
+                detail="Awaiting human confirmation"
               />
             </div>
           </Card>
         </Reveal>
       </div>
 
+      {/* Category Performance Data Table */}
       <Reveal>
-        <Card title="Category performance table">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                  <th className="py-2 pr-4 font-medium">Category</th>
-                  <th className="py-2 pr-4 font-medium">Total</th>
-                  <th className="py-2 pr-4 font-medium">Open</th>
-                  <th className="py-2 pr-4 font-medium">Resolved</th>
-                  <th className="py-2 pr-4 font-medium">Avg. resolution time</th>
+        <Card title="Category Breakdown Table" subtitle="Detailed resolution and status statistics per category">
+          <div className="overflow-x-auto -mx-6 -mb-6 mt-4">
+            <table className="w-full text-left text-sm border-t border-slate-100 dark:border-slate-800">
+              <thead className="bg-slate-50/70 dark:bg-slate-800/50 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                <tr>
+                  <th className="py-3 px-6">Category</th>
+                  <th className="py-3 px-4">Total</th>
+                  <th className="py-3 px-4">Open</th>
+                  <th className="py-3 px-4">Resolved</th>
+                  <th className="py-3 px-4">Avg Resolution</th>
+                  <th className="py-3 px-6 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {categoryPerformance.map((c) => (
-                  <tr key={c.category} className="border-b border-slate-50 dark:border-slate-800/60">
-                    <td className="py-2 pr-4 font-medium text-slate-700 dark:text-slate-200">{c.category}</td>
-                    <td className="py-2 pr-4 text-slate-500">{c.total}</td>
-                    <td className="py-2 pr-4 text-slate-500">{c.open}</td>
-                    <td className="py-2 pr-4 text-slate-500">{c.resolved}</td>
-                    <td className="py-2 pr-4 text-slate-500">{formatMinutes(c.avgResolutionMinutes)}</td>
+                  <tr key={c.category} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                    <td className="py-3.5 px-6 font-medium text-slate-800 dark:text-slate-100">
+                      <CategoryBadge category={c.category} />
+                    </td>
+                    <td className="py-3.5 px-4 font-semibold tabular-nums text-slate-700 dark:text-slate-200">
+                      {c.total.toLocaleString()}
+                    </td>
+                    <td className="py-3.5 px-4 tabular-nums text-sky-600 dark:text-sky-400">{c.open.toLocaleString()}</td>
+                    <td className="py-3.5 px-4 tabular-nums text-emerald-600 dark:text-emerald-400">
+                      {c.resolved.toLocaleString()}
+                    </td>
+                    <td className="py-3.5 px-4 tabular-nums text-slate-600 dark:text-slate-300">
+                      {formatMinutes(c.avgResolutionMinutes)}
+                    </td>
+                    <td className="py-3.5 px-6 text-right">
+                      <Link
+                        to={`/tickets?category=${encodeURIComponent(c.category)}`}
+                        className="text-xs font-semibold text-sky-600 dark:text-sky-400 hover:underline"
+                      >
+                        View Tickets →
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -217,7 +290,7 @@ function StatCard({ label, value, accent }) {
   return (
     <Card hover>
       <p className="text-sm text-slate-400 mb-1">{label}</p>
-      <p className={`text-4xl font-semibold tracking-tight tabular-nums ${accents[accent]}`}>
+      <p className={`text-3xl font-semibold tracking-tight tabular-nums ${accents[accent]}`}>
         <Counter value={value} />
       </p>
     </Card>
@@ -226,10 +299,10 @@ function StatCard({ label, value, accent }) {
 
 function InsightRow({ label, value, detail }) {
   return (
-    <div className="flex items-center justify-between border-b border-slate-50 dark:border-slate-800/60 pb-3 last:border-0 last:pb-0">
-      <span className="text-sm text-slate-400">{label}</span>
+    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-3 last:border-0 last:pb-0">
+      <span className="text-sm text-slate-500 dark:text-slate-400">{label}</span>
       <div className="text-right">
-        <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{value}</p>
+        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{value}</p>
         {detail && <p className="text-xs text-slate-400">{detail}</p>}
       </div>
     </div>
@@ -246,17 +319,18 @@ function formatMinutes(minutes) {
 
 function VolumeChart({ volumeByDay }) {
   const data = {
-    labels: volumeByDay.map((d) => new Date(d.day).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })),
+    labels: volumeByDay.map((d) => new Date(d.day + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })),
     datasets: [
       {
-        label: 'Tickets submitted',
+        label: 'Tickets Submitted',
         data: volumeByDay.map((d) => d.count),
-        borderColor: '#7dd3fc',
-        backgroundColor: 'rgba(125, 211, 252, 0.25)',
+        borderColor: '#0284c7',
+        backgroundColor: 'rgba(14, 165, 233, 0.2)',
         fill: true,
-        tension: 0.35,
-        pointRadius: 3,
-        pointBackgroundColor: '#38bdf8',
+        tension: 0.3,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        pointBackgroundColor: '#0284c7',
       },
     ],
   };
@@ -264,7 +338,7 @@ function VolumeChart({ volumeByDay }) {
     responsive: true,
     plugins: { legend: { display: false } },
     scales: {
-      x: { ticks: { color: CHART_TEXT_COLOR }, grid: { display: false } },
+      x: { ticks: { color: CHART_TEXT_COLOR, font: { size: 11 } }, grid: { display: false } },
       y: { beginAtZero: true, ticks: { color: CHART_TEXT_COLOR, precision: 0 }, grid: { color: CHART_GRID_COLOR } },
     },
   };
@@ -311,7 +385,7 @@ function CategoryChart({ categoryPerformance }) {
     responsive: true,
     plugins: { legend: { display: false } },
     scales: {
-      x: { ticks: { color: CHART_TEXT_COLOR }, grid: { display: false } },
+      x: { ticks: { color: CHART_TEXT_COLOR, font: { size: 11 } }, grid: { display: false } },
       y: { beginAtZero: true, ticks: { color: CHART_TEXT_COLOR, precision: 0 }, grid: { color: CHART_GRID_COLOR } },
     },
   };
@@ -321,4 +395,13 @@ function CategoryChart({ categoryPerformance }) {
 
 function EmptyChart() {
   return <p className="text-sm text-slate-400 text-center py-10">Not enough data yet.</p>;
+}
+
+function Spinner() {
+  return (
+    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-sky-600 dark:text-sky-400" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+    </svg>
+  );
 }

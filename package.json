@@ -8,7 +8,8 @@
     "dev": "concurrently -n SERVER,CLIENT -c blue,green \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
     "dev:server": "npm run dev --prefix server",
     "dev:client": "npm run dev --prefix client",
-    "build:client": "npm run build --prefix client"
+    "build:client": "npm run build --prefix client",
+    "fetch:kaggle": "./.venv/bin/python scripts/pull_kaggle_data.py || python3 scripts/pull_kaggle_data.py"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

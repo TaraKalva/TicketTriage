@@ -10,6 +10,7 @@ export default function ReviewQueue() {
   const [drafts, setDrafts] = useState({});
   const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState(null);
+  const [successMsg, setSuccessMsg] = useState(null);
 
   async function load() {
     const [{ items }, metaData] = await Promise.all([listTickets({ needsReview: true, pageSize: 200 }), getMeta()]);
@@ -28,12 +29,27 @@ export default function ReviewQueue() {
     setDrafts((d) => ({ ...d, [id]: { ...d[id], [field]: value } }));
   }
 
-  async function handleConfirm(id) {
-    setSavingId(id);
+  function resetToSuggested(t) {
+    setDrafts((d) => ({
+      ...d,
+      [t.id]: {
+        category: t.aiCategory || t.category,
+        severity: t.aiSeverity || t.severity,
+        team: t.aiTeam || t.team,
+      },
+    }));
+  }
+
+  async function handleConfirm(t) {
+    setSavingId(t.id);
     setError(null);
+    setSuccessMsg(null);
     try {
-      await reviewTicket(id, drafts[id]);
-      setTickets((rows) => rows.filter((t) => t.id !== id));
+      const selected = drafts[t.id];
+      await reviewTicket(t.id, selected);
+      setTickets((rows) => rows.filter((row) => row.id !== t.id));
+      setSuccessMsg(`Ticket #${t.id.slice(0, 11)} successfully verified and routed to ${selected.team}!`);
+      setTimeout(() => setSuccessMsg(null), 5000);
     } catch (err) {
       setError(err?.response?.data?.error ?? 'Failed to save review.');
     } finally {
@@ -47,14 +63,46 @@ export default function ReviewQueue() {
 
   return (
     <div>
-      <Reveal className="mb-10">
-        <h1 className="text-4xl md:text-5xl font-semibold tracking-tightest text-slate-900 dark:text-white">
-          Review queue
-        </h1>
-        <p className="text-slate-500 dark:text-slate-400 mt-2 text-base md:text-lg">
-          Tickets the AI wasn't confident about. Confirm or correct the classification before it's routed.
-        </p>
+      <Reveal className="mb-8">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-4xl md:text-5xl font-semibold tracking-tightest text-slate-900 dark:text-white">
+              Review queue
+            </h1>
+            <p className="text-slate-500 dark:text-slate-400 mt-2 text-base md:text-lg">
+              Tickets requiring human verification before routing to engineering teams.
+            </p>
+          </div>
+          {tickets.length > 0 && (
+            <div className="px-4 py-2 rounded-full border border-amber-200 dark:border-amber-500/30 bg-amber-50/70 dark:bg-amber-500/10 text-amber-800 dark:text-amber-200 text-sm font-semibold flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              {tickets.length} Pending Review
+            </div>
+          )}
+        </div>
       </Reveal>
+
+      {/* Instructional Info Banner */}
+      <Reveal delay={40} className="mb-6">
+        <div className="rounded-2xl border border-sky-200/70 dark:border-slate-800 bg-sky-50/60 dark:bg-slate-800/40 p-4 text-xs md:text-sm text-slate-600 dark:text-slate-300">
+          <p className="font-semibold text-slate-800 dark:text-slate-100 mb-1 flex items-center gap-2">
+            <span>ℹ️ Human-in-the-Loop Protocol</span>
+          </p>
+          TicketLens holds tickets when AI classification confidence is under{' '}
+          <strong className="text-sky-600 dark:text-sky-400">{Math.round((meta.confidenceThreshold || 0.7) * 100)}%</strong>.
+          Support staff can review the AI suggestion, make any necessary adjustments to category, severity, or team,
+          and click <strong>Confirm & Route</strong>.
+        </div>
+      </Reveal>
+
+      {successMsg && (
+        <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-sm px-4 py-3 mb-5 flex items-center justify-between">
+          <span>✓ {successMsg}</span>
+          <button onClick={() => setSuccessMsg(null)} className="text-emerald-600 hover:underline text-xs">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-2xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 text-red-700 dark:text-red-400 text-sm px-4 py-3 mb-4">
@@ -67,59 +115,91 @@ export default function ReviewQueue() {
           <Card>
             <div className="text-center py-14">
               <p className="text-5xl mb-3">✅</p>
-              <p className="font-medium text-lg text-slate-700 dark:text-slate-200">Review queue is empty</p>
-              <p className="text-sm text-slate-400 mt-1">Every triaged ticket met the confidence threshold.</p>
+              <p className="font-semibold text-xl text-slate-800 dark:text-slate-100">Review queue is empty</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-md mx-auto">
+                All triaged tickets have met the confidence threshold and been auto-routed.
+              </p>
             </div>
           </Card>
         </Reveal>
       ) : (
         <div className="space-y-4">
           {tickets.map((t, i) => (
-            <Reveal key={t.id} delay={Math.min(i, 6) * 60}>
-              <Card hover>
-                <div className="grid md:grid-cols-[1fr_auto] gap-5">
+            <Reveal key={t.id} delay={Math.min(i, 6) * 50}>
+              <Card hover className="border-slate-200 dark:border-slate-800">
+                <div className="grid lg:grid-cols-[1fr_280px] gap-6">
+                  {/* Left Column: Ticket Details & AI Analysis */}
                   <div>
-                    <div className="flex items-center gap-2 flex-wrap mb-2">
-                      <CategoryBadge category={t.aiCategory} />
-                      <SeverityBadge severity={t.aiSeverity} />
-                      <span className="text-xs text-slate-400">AI confidence: {Math.round(t.aiConfidence * 100)}%</span>
+                    <div className="flex items-center gap-2 flex-wrap mb-3">
+                      <CategoryBadge category={t.aiCategory || t.category} />
+                      <SeverityBadge severity={t.aiSeverity || t.severity} />
+                      <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                        Confidence: {Math.round((t.aiConfidence ?? t.confidence ?? 0.5) * 100)}% (&lt;70%)
+                      </span>
                     </div>
-                    {t.title && <p className="font-medium text-slate-800 dark:text-slate-100">{t.title}</p>}
-                    <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">{t.description}</p>
+
+                    {t.title && <h3 className="font-semibold text-base text-slate-900 dark:text-slate-100 mb-1">{t.title}</h3>}
+                    <div className="rounded-xl p-3.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
+                      {t.description}
+                    </div>
+
                     {t.aiReasoning && (
-                      <p className="text-xs text-slate-400 italic mt-2">AI note: "{t.aiReasoning}"</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 italic mt-2.5">
+                        <strong className="text-slate-600 dark:text-slate-300 not-italic">AI Note:</strong> "{t.aiReasoning}"
+                      </p>
                     )}
-                    <p className="text-xs text-slate-400 mt-2">Submitted {new Date(t.submittedAt).toLocaleString()}</p>
+
+                    <div className="flex items-center gap-4 text-xs text-slate-400 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                      <span>ID: <code className="font-mono">{t.id}</code></span>
+                      <span>Submitted: {new Date(t.submittedAt).toLocaleString()}</span>
+                    </div>
                   </div>
 
-                  <div className="w-full md:w-56 flex flex-col gap-2.5 md:border-l md:border-slate-100 md:dark:border-slate-800 md:pl-5">
-                    <Field label="Category">
-                      <Select
-                        value={drafts[t.id]?.category}
-                        onChange={(v) => updateDraft(t.id, 'category', v)}
-                        options={meta.categories}
-                      />
-                    </Field>
-                    <Field label="Severity">
-                      <Select
-                        value={drafts[t.id]?.severity}
-                        onChange={(v) => updateDraft(t.id, 'severity', v)}
-                        options={meta.severities}
-                      />
-                    </Field>
-                    <Field label="Team">
-                      <Select
-                        value={drafts[t.id]?.team}
-                        onChange={(v) => updateDraft(t.id, 'team', v)}
-                        options={meta.teams}
-                      />
-                    </Field>
+                  {/* Right Column: Human Review & Correction Controls */}
+                  <div className="flex flex-col justify-between gap-3 lg:border-l lg:border-slate-100 lg:dark:border-slate-800 lg:pl-6 bg-slate-50/50 dark:bg-slate-900/30 rounded-xl p-3.5 lg:p-0 lg:bg-transparent">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                          Review & Routing
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => resetToSuggested(t)}
+                          className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline"
+                        >
+                          Reset to AI
+                        </button>
+                      </div>
+
+                      <Field label="Category">
+                        <Select
+                          value={drafts[t.id]?.category}
+                          onChange={(v) => updateDraft(t.id, 'category', v)}
+                          options={meta.categories}
+                        />
+                      </Field>
+                      <Field label="Severity">
+                        <Select
+                          value={drafts[t.id]?.severity}
+                          onChange={(v) => updateDraft(t.id, 'severity', v)}
+                          options={meta.severities}
+                        />
+                      </Field>
+                      <Field label="Assigned Team">
+                        <Select
+                          value={drafts[t.id]?.team}
+                          onChange={(v) => updateDraft(t.id, 'team', v)}
+                          options={meta.teams}
+                        />
+                      </Field>
+                    </div>
+
                     <button
-                      onClick={() => handleConfirm(t.id)}
+                      onClick={() => handleConfirm(t)}
                       disabled={savingId === t.id}
-                      className="press mt-1 inline-flex items-center justify-center rounded-full bg-gradient-to-r from-sky-400 to-blue-500 hover:from-sky-500 hover:to-blue-600 disabled:opacity-60 text-white text-sm font-medium px-4 py-2.5 transition-all shadow-md shadow-sky-400/25"
+                      className="press mt-3 w-full inline-flex items-center justify-center rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:opacity-60 text-white text-sm font-semibold px-4 py-2.5 transition-all shadow-md shadow-emerald-500/20"
                     >
-                      {savingId === t.id ? 'Saving...' : 'Confirm & route'}
+                      {savingId === t.id ? 'Routing Ticket...' : '✓ Confirm & Route'}
                     </button>
                   </div>
                 </div>
@@ -135,7 +215,7 @@ export default function ReviewQueue() {
 function Field({ label, children }) {
   return (
     <label className="block text-xs">
-      <span className="text-slate-400">{label}</span>
+      <span className="text-slate-500 dark:text-slate-400 font-medium">{label}</span>
       <div className="mt-1">{children}</div>
     </label>
   );
@@ -146,7 +226,7 @@ function Select({ value, onChange, options }) {
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-xl border border-sky-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800 px-3 py-2 text-sm focus:border-sky-400 focus:ring-4 focus:ring-sky-300/20 outline-none transition-all"
+      className="w-full rounded-xl border border-sky-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-3 py-2 text-sm focus:border-sky-400 focus:ring-4 focus:ring-sky-300/20 outline-none transition-all"
     >
       {options.map((o) => (
         <option key={o} value={o}>

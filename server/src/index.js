@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import ticketsRouter from './routes/tickets.js';
 import dashboardRouter from './routes/dashboard.js';
+import { ensureDataOptimizedAndCurrent } from './db/index.js';
 import { startScheduledAnalysis } from './jobs/scheduledAnalysis.js';
 
 const app = express();
@@ -25,5 +26,6 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`TicketLens API listening on http://localhost:${PORT}`);
+  ensureDataOptimizedAndCurrent();
   startScheduledAnalysis();
 });

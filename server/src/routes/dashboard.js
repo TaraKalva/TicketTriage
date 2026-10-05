@@ -14,7 +14,8 @@ router.get('/summary', (req, res) => {
         COUNT(*) as total,
         SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) as resolved,
         SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as open,
-        SUM(CASE WHEN needsReview = 1 THEN 1 ELSE 0 END) as needsReview
+        SUM(CASE WHEN needsReview = 1 THEN 1 ELSE 0 END) as needsReview,
+        AVG(CASE WHEN status = 'resolved' THEN resolutionMinutes ELSE NULL END) as avgResolutionMinutes
       FROM tickets`
     )
     .get();
@@ -23,7 +24,8 @@ router.get('/summary', (req, res) => {
     .prepare(`SELECT severity, COUNT(*) as count FROM tickets GROUP BY severity`)
     .all();
 
-  const volumeByDay = db
+  // Aggregate past 14 days and ensure every date is accounted for
+  const rawVolumeByDay = db
     .prepare(
       `SELECT substr(submittedAt, 1, 10) as day, COUNT(*) as count
        FROM tickets
@@ -32,6 +34,15 @@ router.get('/summary', (req, res) => {
        ORDER BY day ASC`
     )
     .all();
+
+  const countByDayMap = new Map(rawVolumeByDay.map((r) => [r.day, r.count]));
+  const volumeByDay = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000);
+    const dayStr = d.toISOString().slice(0, 10);
+    volumeByDay.push({ day: dayStr, count: countByDayMap.get(dayStr) || 0 });
+  }
+
 
   const categoryPerformanceRows = db
     .prepare(
@@ -71,6 +82,7 @@ router.get('/summary', (req, res) => {
       resolved: totals.resolved ?? 0,
       open: totals.open ?? 0,
       needsReview: totals.needsReview ?? 0,
+      avgResolutionMinutes: totals.avgResolutionMinutes != null ? Math.round(totals.avgResolutionMinutes) : null,
     },
     severityBreakdown,
     volumeByDay,

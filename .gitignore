@@ -8,3 +8,6 @@ server/data/*.sqlite*
 *.sqlite*
 .DS_Store
 .claude/
+.venv/
+__pycache__/
+

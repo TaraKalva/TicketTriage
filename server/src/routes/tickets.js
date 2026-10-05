@@ -20,9 +20,8 @@ const insertTicketStmt = db.prepare(`
 router.get('/meta', (req, res) => {
   res.json({ categories: CATEGORIES, severities: SEVERITIES, teams: TEAMS, confidenceThreshold: getConfidenceThreshold() });
 });
-
 router.get('/', (req, res) => {
-  const { status, needsReview, category, team, search } = req.query;
+  const { status, needsReview, category, team, severity, search, sortBy, sortOrder } = req.query;
   const clauses = [];
   const params = {};
   if (status) {
@@ -41,11 +40,20 @@ router.get('/', (req, res) => {
     clauses.push('team = @team');
     params.team = team;
   }
+  if (severity) {
+    clauses.push('severity = @severity');
+    params.severity = severity;
+  }
   if (search) {
-    clauses.push('description LIKE @search');
+    clauses.push('(description LIKE @search OR id LIKE @search OR title LIKE @search)');
     params.search = `%${search}%`;
   }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+
+  const ALLOWED_SORT_COLUMNS = new Set(['submittedAt', 'confidence', 'resolutionMinutes', 'severity']);
+  const sortCol = ALLOWED_SORT_COLUMNS.has(sortBy) ? sortBy : 'submittedAt';
+  const sortDir = sortOrder?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
 
   const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize) || 25));
   const page = Math.max(1, Number(req.query.page) || 1);
@@ -53,7 +61,7 @@ router.get('/', (req, res) => {
 
   const total = db.prepare(`SELECT COUNT(*) as count FROM tickets ${where}`).get(params).count;
   const rows = db
-    .prepare(`SELECT * FROM tickets ${where} ORDER BY submittedAt DESC LIMIT @pageSize OFFSET @offset`)
+    .prepare(`SELECT * FROM tickets ${where} ORDER BY ${sortCol} ${sortDir} LIMIT @pageSize OFFSET @offset`)
     .all({ ...params, pageSize, offset });
 
   res.json({ items: rows.map(serializeTicket), total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) });
