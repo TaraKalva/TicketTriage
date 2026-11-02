@@ -37,15 +37,42 @@ export const DEFAULT_TEAM_BY_CATEGORY = {
   Other: 'Product Team',
 };
 
-const SYSTEM_PROMPT = `You are a support ticket triage assistant for a SaaS product. Read the ticket description and classify it.
-Respond with ONLY a compact JSON object, no markdown fences, no commentary, in exactly this shape:
-{"category": "<one of: ${CATEGORIES.join(', ')}>", "severity": "<one of: ${SEVERITIES.join(', ')}>", "team": "<one of: ${TEAMS.join(', ')}>", "confidence": <number between 0 and 1>, "reasoning": "<one short sentence>"}
+export const ENVIRONMENTS = ['Production', 'Staging', 'Development', 'Internal'];
 
-Guidance:
-- "confidence" reflects how certain YOU are about this classification given the description. Use lower confidence (below 0.6) for vague, ambiguous, or very short descriptions. Use high confidence (0.85+) only when the description is clear and unambiguous.
-- "severity" Critical = product down / data loss / security breach affecting many users; High = one user fully blocked from working; Medium = degraded but workable; Low = cosmetic, a question, or a minor annoyance.
-- "team" should reflect which part of the product the issue lives in (e.g. billing issues -> Billing Team, login/password/MFA issues -> Identity & Access Team, mobile app crashes -> Mobile App Team, API/integration bugs -> Platform/API Team, dashboards/reporting -> Analytics Team, exports -> Data Team, alerts/emails -> Notifications Team; anything general, a how-to question, or a feature idea -> Product Team).
-- Pick exactly one value from each enum list, matching spelling exactly.`;
+export const SYSTEM_OPTIONS = [
+  'Authentication / SSO',
+  'Mobile App (iOS/Android)',
+  'Web Dashboard',
+  'Platform API / Webhooks',
+  'Billing & Payments',
+  'Data Warehouse & Exports',
+  'Notification Service',
+  'Customer Portal',
+];
+
+const SYSTEM_PROMPT = `You are an expert IT support ticket triage assistant for an enterprise SaaS platform.
+Analyze the ticket details (including description and any optional technical context such as affected system, environment, error details, and reproduction steps) and classify it accurately.
+
+Respond with ONLY a compact JSON object, no markdown fences, no commentary, in exactly this shape:
+{"category": "<one of: ${CATEGORIES.join(', ')}>", "severity": "<one of: ${SEVERITIES.join(', ')}>", "team": "<one of: ${TEAMS.join(', ')}>", "confidence": <number between 0 and 1>, "reasoning": "<concise sentence explaining why category, severity, and team were chosen>", "reviewReason": "<if confidence < 0.7, explain why human review is required; otherwise null>"}
+
+Classification Rules:
+- "confidence": Reflects how certain the classification is based on concrete evidence. Use < 0.65 for brief, ambiguous, or vague descriptions (e.g. 'not working', 'thing is broken'). Use high confidence (0.80+) when symptoms, system, or error codes are clear.
+- "severity":
+  * Critical = widespread outage, production failure affecting multiple users, data loss, or active security exploit.
+  * High = single user blocked from working (e.g. unable to log in / authenticate), core workflow broken, or high-impact production issue.
+  * Medium = bug or error with available workaround, non-blocking performance degradation.
+  * Low = cosmetic issue, minor UI flaw, how-to question, or feature idea.
+- "team":
+  * Identity & Access Team: login, SSO, password, authentication, MFA, permissions.
+  * Mobile App Team: iOS / Android apps, mobile crashes, mobile layout bugs.
+  * Platform/API Team: backend APIs, webhooks, 5xx server errors, system timeouts.
+  * Billing Team: invoices, payment gateway, charges, refunds, subscription plans.
+  * Data Team: database queries, data warehouse, CSV/ETL imports and exports.
+  * Analytics Team: dashboards, charts, reporting metrics, telemetry.
+  * Notifications Team: email alerts, SMS, push notifications infrastructure.
+  * Product Team: feature requests, how-to questions, user feedback, general inquiries.
+- Match taxonomy exactly.`;
 
 function extractJson(text) {
   const start = text.indexOf('{');
@@ -54,26 +81,65 @@ function extractJson(text) {
   return JSON.parse(text.slice(start, end + 1));
 }
 
-function normalize(result, description) {
+function formatTicketPayload(input) {
+  if (typeof input === 'string') {
+    return { description: input.trim(), affectedSystem: '', environment: '', errorDetails: '', reproductionSteps: '' };
+  }
+  return {
+    description: (input?.description || '').trim(),
+    affectedSystem: (input?.affectedSystem || '').trim(),
+    environment: (input?.environment || '').trim(),
+    errorDetails: (input?.errorDetails || '').trim(),
+    reproductionSteps: (input?.reproductionSteps || '').trim(),
+  };
+}
+
+function buildPromptContent(payload) {
+  const lines = [`Ticket Description:\n"""${payload.description}"""`];
+  if (payload.affectedSystem) lines.push(`Affected System: ${payload.affectedSystem}`);
+  if (payload.environment) lines.push(`Environment: ${payload.environment}`);
+  if (payload.errorDetails) lines.push(`Error Details: ${payload.errorDetails}`);
+  if (payload.reproductionSteps) lines.push(`Reproduction Steps:\n${payload.reproductionSteps}`);
+  return lines.join('\n\n');
+}
+
+function normalize(result, payload) {
   const category = CATEGORIES.includes(result.category) ? result.category : 'Other';
   const severity = SEVERITIES.includes(result.severity) ? result.severity : 'Medium';
   const team = TEAMS.includes(result.team) ? result.team : DEFAULT_TEAM_BY_CATEGORY[category];
   let confidence = Number(result.confidence);
   if (!Number.isFinite(confidence)) confidence = 0.5;
   confidence = Math.min(1, Math.max(0, confidence));
-  const reasoning = typeof result.reasoning === 'string' ? result.reasoning.slice(0, 500) : '';
-  return { category, severity, team, confidence, reasoning, source: result.source ?? 'ai' };
+
+  let reasoning = typeof result.reasoning === 'string' && result.reasoning.trim()
+    ? result.reasoning.slice(0, 500)
+    : `Classified as ${category} routed to ${team}.`;
+
+  let reviewReason = result.reviewReason || null;
+  if (confidence < 0.7 && !reviewReason) {
+    reviewReason = `Confidence score (${Math.round(confidence * 100)}%) is below the 70% threshold. Human verification is recommended.`;
+  }
+
+  return {
+    category,
+    severity,
+    team,
+    confidence,
+    reasoning,
+    reviewReason: confidence < 0.7 ? reviewReason : null,
+    source: result.source ?? 'ai',
+  };
 }
 
-
-async function classifyWithOpenAI(description) {
+async function classifyWithOpenAI(payload) {
   const { default: OpenAI } = await import('openai');
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const content = buildPromptContent(payload);
   const completion = await client.chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: `Ticket description:\n"""${description}"""` },
+      { role: 'user', content },
     ],
     temperature: 0.2,
     response_format: { type: 'json_object' },
@@ -81,23 +147,24 @@ async function classifyWithOpenAI(description) {
   return extractJson(completion.choices[0].message.content);
 }
 
-// Uses the Gemini API free tier — defaults to a Flash model, which is free-tier eligible.
-// Get a free API key at https://aistudio.google.com/apikey
-async function classifyWithGemini(description) {
+// Uses the Gemini API — defaults to gemini-3.8-flash with fallbacks
+async function classifyWithGemini(payload) {
   const { GoogleGenAI } = await import('@google/genai');
   const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   const models = [
-    process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+    process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+    'gemini-3.6-flash',
     'gemini-3.1-flash-lite',
     'gemini-3.5-flash-lite',
   ];
 
+  const content = buildPromptContent(payload);
   let lastErr = null;
   for (const model of models) {
     try {
       const response = await client.models.generateContent({
         model,
-        contents: `Ticket description:\n"""${description}"""`,
+        contents: content,
         config: {
           systemInstruction: SYSTEM_PROMPT,
           responseMimeType: 'application/json',
@@ -116,83 +183,147 @@ async function classifyWithGemini(description) {
 }
 
 const KEYWORD_RULES = [
-  { category: 'Account Access', keywords: ['password', 'login', 'log in', 'locked out', "can't access", 'cannot access', 'mfa', '2fa', 'sign in', 'reset my', 'incorrect'] },
-  { category: 'Bug', keywords: ['bug', 'crash', 'crashing', 'broken', 'not working', "doesn't work", "isn't saving", 'not saving', 'error', 'glitch', 'freezes'] },
-  { category: 'Performance', keywords: ['slow', 'lag', 'laggy', 'timeout', 'timing out', 'unresponsive', 'loading forever', 'takes forever', 'performance'] },
-  { category: 'Billing Problem', keywords: ['billing', 'invoice', 'charge', 'charged', 'payment', 'refund', 'subscription', 'price', 'overcharged'] },
-  { category: 'Security Concern', keywords: ['suspicious', 'phishing', 'breach', 'hacked', 'unauthorized', 'malware', 'security', 'fraud'] },
-  { category: 'Feature Request', keywords: ['would be nice', 'feature request', 'please add', 'wish', 'suggestion', 'could you add', 'it would help if'] },
-  { category: 'How-To Question', keywords: ['how do i', 'how to', 'where is', 'where can i', 'can you explain', 'instructions', 'not sure how'] },
+  { category: 'Account Access', keywords: ['password', 'login', 'log in', 'locked out', "can't access", 'cannot access', 'mfa', '2fa', 'sign in', 'reset my', 'incorrect', 'auth', 'authentication', 'credential', 'sso'] },
+  { category: 'Bug', keywords: ['bug', 'crash', 'crashing', 'broken', 'not working', "doesn't work", "isn't saving", 'not saving', 'error', 'glitch', 'freezes', 'exception', 'stack trace'] },
+  { category: 'Performance', keywords: ['slow', 'lag', 'laggy', 'timeout', 'timing out', 'unresponsive', 'loading forever', 'takes forever', 'performance', 'latency', 'high cpu'] },
+  { category: 'Billing Problem', keywords: ['billing', 'invoice', 'charge', 'charged', 'payment', 'refund', 'subscription', 'price', 'overcharged', 'receipt', 'card declined'] },
+  { category: 'Security Concern', keywords: ['suspicious', 'phishing', 'breach', 'hacked', 'unauthorized', 'malware', 'security', 'fraud', 'vulnerability', 'exploit'] },
+  { category: 'Feature Request', keywords: ['would be nice', 'feature request', 'please add', 'wish', 'suggestion', 'could you add', 'it would help if', 'add support for'] },
+  { category: 'How-To Question', keywords: ['how do i', 'how to', 'where is', 'where can i', 'can you explain', 'instructions', 'not sure how', 'documentation'] },
 ];
 
 const SEVERITY_RULES = [
-  { severity: 'Critical', keywords: ['down', 'outage', 'breach', 'data loss', 'everyone', 'production', 'all users', 'entire team', 'lost all my data'] },
-  { severity: 'High', keywords: ['cannot work', "can't work", 'blocked', 'urgent', 'asap', 'cannot access', "can't access", 'locked out'] },
-  { severity: 'Low', keywords: ['minor', 'cosmetic', 'small issue', 'when you get a chance', 'no rush', 'just wondering'] },
+  { severity: 'Critical', keywords: ['down', 'outage', 'breach', 'data loss', 'everyone', 'production outage', 'all users', 'entire team', 'lost all my data', 'catastrophic'] },
+  { severity: 'High', keywords: ['cannot work', "can't work", 'blocked', 'urgent', 'asap', 'cannot access', "can't access", 'locked out', 'cannot log in', 'auth failed', 'authentication failed'] },
+  { severity: 'Low', keywords: ['minor', 'cosmetic', 'small issue', 'when you get a chance', 'no rush', 'just wondering', 'typo', 'feedback'] },
 ];
 
-function classifyWithRules(description) {
-  const text = description.toLowerCase();
+function classifyWithRules(payload) {
+  const fullText = `${payload.description} ${payload.errorDetails} ${payload.reproductionSteps} ${payload.affectedSystem}`.toLowerCase();
+  const descWords = payload.description.trim().split(/\s+/).filter(Boolean);
 
   let bestCategory = null;
   let bestHits = 0;
   for (const rule of KEYWORD_RULES) {
-    const hits = rule.keywords.filter((kw) => text.includes(kw)).length;
+    const hits = rule.keywords.filter((kw) => fullText.includes(kw)).length;
     if (hits > bestHits) {
       bestHits = hits;
       bestCategory = rule.category;
     }
   }
+
+  // System context influence
+  const systemLower = payload.affectedSystem.toLowerCase();
+  if (systemLower.includes('auth') || systemLower.includes('sso')) {
+    bestCategory = 'Account Access';
+    bestHits = Math.max(bestHits, 2);
+  } else if (systemLower.includes('billing') || systemLower.includes('payment')) {
+    bestCategory = 'Billing Problem';
+    bestHits = Math.max(bestHits, 2);
+  } else if (systemLower.includes('mobile')) {
+    if (!bestCategory || bestCategory === 'Other') bestCategory = 'Bug';
+  }
+
   const category = bestCategory ?? 'Other';
 
+  // Determine Severity
   let severity = 'Medium';
   for (const rule of SEVERITY_RULES) {
-    if (rule.keywords.some((kw) => text.includes(kw))) {
+    if (rule.keywords.some((kw) => fullText.includes(kw))) {
       severity = rule.severity;
       break;
     }
   }
 
-  const team = DEFAULT_TEAM_BY_CATEGORY[category];
+  // Elevate severity if in Production and has high impact
+  if (payload.environment === 'Production' && severity === 'Medium' && (payload.errorDetails || fullText.includes('error') || fullText.includes('fail'))) {
+    severity = 'High';
+  }
 
-  let confidence;
-  if (bestCategory && bestHits >= 2) confidence = 0.8;
-  else if (bestCategory) confidence = 0.62;
-  else confidence = 0.4;
-  if (text.trim().split(/\s+/).length < 6) confidence = Math.min(confidence, 0.45);
+  // Determine Team
+  let team = DEFAULT_TEAM_BY_CATEGORY[category] || 'Product Team';
+  if (systemLower.includes('mobile')) {
+    team = 'Mobile App Team';
+  } else if (systemLower.includes('auth') || systemLower.includes('sso') || category === 'Account Access') {
+    team = 'Identity & Access Team';
+  } else if (systemLower.includes('billing') || category === 'Billing Problem') {
+    team = 'Billing Team';
+  } else if (systemLower.includes('api') || systemLower.includes('webhook')) {
+    team = 'Platform/API Team';
+  } else if (systemLower.includes('data') || systemLower.includes('export')) {
+    team = 'Data Team';
+  }
+
+  // Calculate Confidence
+  let confidence = 0.5;
+  const isVague =
+    descWords.length < 8 &&
+    !payload.errorDetails &&
+    !payload.reproductionSteps &&
+    (fullText.includes('thing') || fullText.includes('not working') || bestHits <= 1);
+
+  if (isVague) {
+    confidence = 0.45;
+  } else if (bestCategory && bestHits >= 2) {
+    confidence = 0.88;
+  } else if (bestCategory && bestHits === 1) {
+    confidence = 0.65;
+  } else {
+    confidence = 0.42;
+  }
+
+  // Technical context boost
+  if (payload.errorDetails && payload.errorDetails.length > 3) confidence = Math.min(0.95, confidence + 0.08);
+  if (payload.reproductionSteps && payload.reproductionSteps.length > 10) confidence = Math.min(0.95, confidence + 0.06);
+  if (payload.affectedSystem) confidence = Math.min(0.95, confidence + 0.04);
+
+  let reasoning = '';
+  let reviewReason = null;
+
+  if (confidence >= 0.7) {
+    reasoning = `Strong signal match for ${category} (${bestHits} matching pattern indicators). Routed to ${team} with ${severity} priority.`;
+  } else {
+    reasoning = bestCategory
+      ? `Tentative match for ${category}, but signals are sparse.`
+      : 'Ambiguous description with insufficient technical indicators.';
+    reviewReason = isVague
+      ? `Confidence score (${Math.round(confidence * 100)}%) is below 70% threshold because the description is brief/vague and lacks concrete error or reproduction details.`
+      : `Confidence score (${Math.round(confidence * 100)}%) is below 70% threshold. Human confirmation required before team dispatch.`;
+  }
 
   return {
     category,
     severity,
     team,
-    confidence,
-    reasoning: bestCategory
-      ? `Matched keyword rules for "${category}".`
-      : 'No AI key configured and no clear keyword match; defaulted to Other with low confidence.',
-    source: 'rule-based-fallback',
+    confidence: Number(confidence.toFixed(2)),
+    reasoning,
+    reviewReason,
+    source: 'rule-based-engine',
   };
 }
 
-export async function triageTicket(description) {
+export async function triageTicket(input) {
+  const payload = formatTicketPayload(input);
   try {
     if (process.env.GEMINI_API_KEY) {
-      const raw = await classifyWithGemini(description);
-      return normalize({ ...raw, source: 'gemini' }, description);
+      const raw = await classifyWithGemini(payload);
+      return normalize({ ...raw, source: 'gemini' }, payload);
     }
     if (process.env.OPENAI_API_KEY) {
-      const raw = await classifyWithOpenAI(description);
-      return normalize({ ...raw, source: 'openai' }, description);
+      const raw = await classifyWithOpenAI(payload);
+      return normalize({ ...raw, source: 'openai' }, payload);
     }
   } catch (err) {
-    console.error('[aiTriage] AI classification failed, falling back to rule-based classifier:', err.message);
+    console.error('[aiTriage] AI classification failed, falling back to rule-based engine:', err.message);
   }
-  return normalize(classifyWithRules(description), description);
+  return normalize(classifyWithRules(payload), payload);
 }
 
 export function getConfidenceThreshold() {
   const raw = Number(process.env.CONFIDENCE_THRESHOLD);
   return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : 0.7;
 }
+
 
 // ---------------------------------------------------------------------------
 // Predictive layer: "what's the next probable ticket?"

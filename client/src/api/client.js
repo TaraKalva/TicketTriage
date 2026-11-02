@@ -11,7 +11,9 @@ export const resolveTicket = (id) => api.patch(`/tickets/${id}/resolve`).then((r
 export const reopenTicket = (id) => api.patch(`/tickets/${id}/reopen`).then((r) => r.data);
 export const deleteTicket = (id) => api.delete(`/tickets/${id}`).then((r) => r.data);
 
-export const getDashboardSummary = () => api.get('/dashboard/summary').then((r) => r.data);
+export const getDashboardSummary = (params = {}) => api.get('/dashboard/summary', { params }).then((r) => r.data);
+export const getSupportingTickets = (category, days = 14, team = null) =>
+  api.get('/dashboard/supporting-tickets', { params: { category, days, team } }).then((r) => r.data);
 export const getRiskScores = () => api.get('/dashboard/risk-scores').then((r) => r.data);
 export const recomputeRiskScores = () => api.post('/dashboard/risk-scores/recompute').then((r) => r.data);
 export const getNextTicketPrediction = () => api.get('/dashboard/predict-next-ticket').then((r) => r.data);
@@ -20,3 +22,4 @@ export const recomputeNextTicketPrediction = () =>
 export const recomputeAll = () => api.post('/dashboard/recompute').then((r) => r.data);
 
 export default api;
+

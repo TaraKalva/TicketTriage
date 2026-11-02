@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import Card from '../components/Card.jsx';
 import Reveal from '../components/Reveal.jsx';
-import { SeverityBadge, StatusBadge, CategoryBadge, ReviewBadge } from '../components/Badge.jsx';
+import { SeverityBadge, StatusBadge, CategoryBadge, ReviewBadge, EnvironmentBadge, SystemBadge } from '../components/Badge.jsx';
+import TicketDetailModal from '../components/TicketDetailModal.jsx';
 import { getMeta, listTickets, resolveTicket, reopenTicket, deleteTicket } from '../api/client.js';
 
 const STATUS_OPTIONS = ['all', 'open', 'resolved'];
@@ -105,21 +106,44 @@ export default function AllTickets() {
   }
 
   return (
-    <div>
-      <Reveal className="mb-8 flex flex-wrap items-end justify-between gap-5">
+    <div className="space-y-6">
+      <Reveal className="flex flex-wrap items-end justify-between gap-5">
         <div>
           <h1 className="text-4xl md:text-5xl font-semibold tracking-tightest text-slate-900 dark:text-white">
             All tickets
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-2 text-base md:text-lg">
-            {total.toLocaleString()} ticket{total === 1 ? '' : 's'} — central repository to filter, inspect, and manage status.
+            {total.toLocaleString()} ticket{total === 1 ? '' : 's'} — central repository to filter, inspect, and manage incident life cycles.
           </p>
+        </div>
+      </Reveal>
+
+      {/* Discoverability Banner linking to Proactive Dashboard (Solves E06) */}
+      <Reveal delay={40}>
+        <div className="rounded-2xl border border-sky-200/80 dark:border-slate-800 bg-gradient-to-r from-sky-50 to-blue-50/60 dark:from-slate-800/60 dark:to-slate-800/40 p-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">💡</span>
+            <div>
+              <span className="font-semibold text-sm text-slate-900 dark:text-slate-100">
+                Looking for incident trends, volume surges, or recurring patterns?
+              </span>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Check the Operational Dashboard for automated pattern surveillance, surge formulas, and predictive ticket forecasts.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/"
+            className="press px-4 py-2 rounded-full text-xs font-semibold bg-sky-600 hover:bg-sky-700 text-white shadow-sm transition-all"
+          >
+            View Operational Dashboard →
+          </Link>
         </div>
       </Reveal>
 
       {/* Filter Toolbar */}
       <Reveal delay={60}>
-        <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {/* Status Segmented Control */}
           <div className="inline-flex rounded-full glass border border-white/60 dark:border-slate-700 p-1 shadow-sm">
             {STATUS_OPTIONS.map((s) => (
@@ -185,8 +209,8 @@ export default function AllTickets() {
               type="search"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search tickets / ID..."
-              className="rounded-full border border-sky-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800 px-4 py-2 text-sm outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-300/20 w-52 md:w-60 transition-all"
+              placeholder="Search tickets / ID / error..."
+              className="rounded-full border border-sky-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800 px-4 py-2 text-sm outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-300/20 w-52 md:w-64 transition-all"
             />
           </form>
 
@@ -202,13 +226,13 @@ export default function AllTickets() {
       </Reveal>
 
       {/* Ticket List Table */}
-      <Reveal delay={120}>
+      <Reveal delay={100}>
         <Card className="!p-0 overflow-hidden shadow-lg border-slate-200 dark:border-slate-800">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50/70 dark:bg-slate-800/60 border-b border-slate-200/80 dark:border-slate-800 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">
                 <tr>
-                  <th className="px-5 py-3.5">Ticket Description</th>
+                  <th className="px-5 py-3.5">Ticket Description &amp; Context</th>
                   <th className="px-4 py-3.5">Category</th>
                   <th className="px-4 py-3.5">Severity</th>
                   <th className="px-4 py-3.5">Assigned Team</th>
@@ -238,13 +262,27 @@ export default function AllTickets() {
                     onClick={() => setSelectedTicket(t)}
                     className="cursor-pointer hover:bg-sky-50/60 dark:hover:bg-slate-800/50 transition-colors"
                   >
-                    <td className="px-5 py-3.5 max-w-sm">
-                      <p className="font-medium text-slate-800 dark:text-slate-100 line-clamp-1">{t.title || t.description}</p>
-                      {t.title && <p className="text-xs text-slate-400 line-clamp-1">{t.description}</p>}
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[11px] font-mono text-slate-400">{t.id}</span>
+                    <td className="px-5 py-3.5 max-w-md">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-mono text-[11px] text-slate-400">
+                          #{t.id.slice(0, 8)}
+                        </span>
+                        {t.title && (
+                          <span className="font-semibold text-xs text-slate-800 dark:text-slate-100 truncate">
+                            {t.title}
+                          </span>
+                        )}
                         {t.needsReview ? <ReviewBadge /> : null}
                       </div>
+                      <p className="line-clamp-2 text-xs text-slate-600 dark:text-slate-300 leading-snug">
+                        {t.description}
+                      </p>
+                      {(t.affectedSystem || t.environment) && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          {t.environment && <EnvironmentBadge environment={t.environment} />}
+                          {t.affectedSystem && <SystemBadge system={t.affectedSystem} />}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3.5 whitespace-nowrap">
                       <CategoryBadge category={t.category} />
@@ -262,12 +300,12 @@ export default function AllTickets() {
                       {new Date(t.submittedAt).toLocaleDateString()}
                     </td>
                     <td className="px-5 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex justify-end items-center gap-2.5">
+                      <div className="flex justify-end items-center gap-2">
                         <button
                           onClick={() => setSelectedTicket(t)}
-                          className="text-xs font-semibold text-sky-600 dark:text-sky-400 hover:underline"
+                          className="text-xs font-semibold text-sky-600 dark:text-sky-400 hover:underline px-2 py-1"
                         >
-                          View
+                          View Details
                         </button>
                         {t.status === 'open' ? (
                           <button
@@ -321,113 +359,13 @@ export default function AllTickets() {
 
       {/* Ticket Details Modal */}
       {selectedTicket && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn"
-          onClick={() => setSelectedTicket(null)}
-        >
-          <div
-            className="w-full max-w-xl rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden p-6 space-y-5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
-              <div>
-                <span className="text-xs font-mono text-slate-400 block mb-1">Ticket #{selectedTicket.id}</span>
-                <h3 className="font-semibold text-lg text-slate-900 dark:text-slate-100">
-                  {selectedTicket.title || 'Support Ticket Details'}
-                </h3>
-              </div>
-              <button
-                onClick={() => setSelectedTicket(null)}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <CategoryBadge category={selectedTicket.category} />
-              <SeverityBadge severity={selectedTicket.severity} />
-              <StatusBadge status={selectedTicket.status} />
-              {selectedTicket.needsReview ? <ReviewBadge /> : null}
-            </div>
-
-            <div>
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">
-                Description
-              </span>
-              <div className="rounded-xl p-4 bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
-                {selectedTicket.description}
-              </div>
-            </div>
-
-            {selectedTicket.aiReasoning && (
-              <div className="rounded-xl p-3.5 bg-sky-50/50 dark:bg-slate-800/40 border border-sky-100 dark:border-slate-800 text-xs">
-                <span className="font-semibold text-slate-700 dark:text-slate-300 block mb-0.5">
-                  AI Triage Rationale (Confidence: {Math.round(selectedTicket.confidence * 100)}%)
-                </span>
-                <p className="text-slate-600 dark:text-slate-400 italic">"{selectedTicket.aiReasoning}"</p>
-              </div>
-            )}
-
-            <dl className="grid grid-cols-2 gap-y-2 text-xs border-t border-slate-100 dark:border-slate-800 pt-4">
-              <dt className="text-slate-400">Assigned Team</dt>
-              <dd className="font-medium text-slate-800 dark:text-slate-200">{selectedTicket.team}</dd>
-              <dt className="text-slate-400">Submitted At</dt>
-              <dd className="text-slate-800 dark:text-slate-200">{new Date(selectedTicket.submittedAt).toLocaleString()}</dd>
-              {selectedTicket.resolvedAt && (
-                <>
-                  <dt className="text-slate-400">Resolved At</dt>
-                  <dd className="text-slate-800 dark:text-slate-200">{new Date(selectedTicket.resolvedAt).toLocaleString()}</dd>
-                </>
-              )}
-              {selectedTicket.resolutionMinutes && (
-                <>
-                  <dt className="text-slate-400">Resolution Time</dt>
-                  <dd className="text-slate-800 dark:text-slate-200">
-                    {selectedTicket.resolutionMinutes > 60
-                      ? `${(selectedTicket.resolutionMinutes / 60).toFixed(1)} hours`
-                      : `${selectedTicket.resolutionMinutes} minutes`}
-                  </dd>
-                </>
-              )}
-            </dl>
-
-            <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-4">
-              <button
-                disabled={busyId === selectedTicket.id}
-                onClick={() => handleDelete(selectedTicket.id)}
-                className="text-xs font-semibold text-red-500 hover:text-red-600 disabled:opacity-50"
-              >
-                Delete Ticket
-              </button>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setSelectedTicket(null)}
-                  className="px-4 py-2 rounded-full border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
-                  Close
-                </button>
-                {selectedTicket.status === 'open' ? (
-                  <button
-                    disabled={busyId === selectedTicket.id}
-                    onClick={() => handleResolve(selectedTicket.id)}
-                    className="press px-4 py-2 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold shadow-md shadow-emerald-500/20"
-                  >
-                    Mark Resolved
-                  </button>
-                ) : (
-                  <button
-                    disabled={busyId === selectedTicket.id}
-                    onClick={() => handleReopen(selectedTicket.id)}
-                    className="press px-4 py-2 rounded-full bg-sky-500 hover:bg-sky-600 text-white text-xs font-semibold shadow-md shadow-sky-500/20"
-                  >
-                    Reopen Ticket
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        <TicketDetailModal
+          ticket={selectedTicket}
+          onClose={() => setSelectedTicket(null)}
+          onResolve={handleResolve}
+          onReopen={handleReopen}
+          onDelete={handleDelete}
+        />
       )}
     </div>
   );

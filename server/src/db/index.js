@@ -33,7 +33,17 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'open',
     submittedAt TEXT NOT NULL,
     resolvedAt TEXT,
-    resolutionMinutes REAL
+    resolutionMinutes REAL,
+    affectedSystem TEXT,
+    environment TEXT,
+    errorDetails TEXT,
+    reproductionSteps TEXT,
+    reviewReason TEXT,
+    originalCategory TEXT,
+    originalSeverity TEXT,
+    originalTeam TEXT,
+    originalConfidence REAL,
+    auditTrail TEXT
   );
 
   CREATE TABLE IF NOT EXISTS risk_scores (
@@ -43,6 +53,8 @@ db.exec(`
     priorCount INTEGER NOT NULL,
     rising INTEGER NOT NULL DEFAULT 0,
     recommendation TEXT,
+    calculationDetails TEXT,
+    suggestedActions TEXT,
     computedAt TEXT NOT NULL
   );
 
@@ -70,6 +82,32 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_risk_scores_computedAt ON risk_scores(computedAt);
   CREATE INDEX IF NOT EXISTS idx_predictions_computedAt ON predictions(computedAt);
 `);
+
+// Safe column migrations for existing SQLite instances
+function addColumnIfNotExists(table, column, def) {
+  try {
+    const cols = db.pragma(`table_info(${table})`).map((c) => c.name);
+    if (!cols.includes(column)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
+    }
+  } catch (err) {
+    console.error(`[db] Failed to add column ${column} to ${table}:`, err.message);
+  }
+}
+
+addColumnIfNotExists('tickets', 'affectedSystem', 'TEXT');
+addColumnIfNotExists('tickets', 'environment', 'TEXT');
+addColumnIfNotExists('tickets', 'errorDetails', 'TEXT');
+addColumnIfNotExists('tickets', 'reproductionSteps', 'TEXT');
+addColumnIfNotExists('tickets', 'reviewReason', 'TEXT');
+addColumnIfNotExists('tickets', 'originalCategory', 'TEXT');
+addColumnIfNotExists('tickets', 'originalSeverity', 'TEXT');
+addColumnIfNotExists('tickets', 'originalTeam', 'TEXT');
+addColumnIfNotExists('tickets', 'originalConfidence', 'REAL');
+addColumnIfNotExists('tickets', 'auditTrail', 'TEXT');
+addColumnIfNotExists('risk_scores', 'calculationDetails', 'TEXT');
+addColumnIfNotExists('risk_scores', 'suggestedActions', 'TEXT');
+
 
 export function ensureDataOptimizedAndCurrent() {
   try {

@@ -1,5 +1,5 @@
 import db from '../db/index.js';
-import { CATEGORIES } from './aiTriage.js';
+import { CATEGORIES, DEFAULT_TEAM_BY_CATEGORY } from './aiTriage.js';
 
 const PERIOD_DAYS = Number(process.env.RISK_PERIOD_DAYS) || 7;
 const MIN_RECENT_VOLUME = 3;
@@ -12,8 +12,13 @@ const countByCategoryStmt = db.prepare(`
 `);
 
 const insertRiskScoreStmt = db.prepare(`
-  INSERT INTO risk_scores (category, recentCount, priorCount, rising, recommendation, computedAt)
-  VALUES (@category, @recentCount, @priorCount, @rising, @recommendation, @computedAt)
+  INSERT INTO risk_scores (
+    category, recentCount, priorCount, rising, recommendation,
+    calculationDetails, suggestedActions, computedAt
+  ) VALUES (
+    @category, @recentCount, @priorCount, @rising, @recommendation,
+    @calculationDetails, @suggestedActions, @computedAt
+  )
 `);
 
 function buildRecommendation(category, recentCount, priorCount, rising) {
@@ -23,6 +28,56 @@ function buildRecommendation(category, recentCount, priorCount, rising) {
   }
   const pctChange = Math.round(((recentCount - priorCount) / priorCount) * 100);
   return `Proactive review of ${category} recommended — volume is up ${pctChange}% vs. the prior ${PERIOD_DAYS}-day period (${priorCount} → ${recentCount}).`;
+}
+
+function buildCalculationDetails(recentCount, priorCount, rising) {
+  if (!rising) {
+    return `Standard volume baseline: ${recentCount} ticket(s) in last ${PERIOD_DAYS}d vs ${priorCount} in prior ${PERIOD_DAYS}d. No anomalous spike detected.`;
+  }
+  const pctChange = priorCount > 0 ? Math.round(((recentCount - priorCount) / priorCount) * 100) : 100;
+  return `Volume surge calculation: ${recentCount} tickets in past ${PERIOD_DAYS} days vs ${priorCount} in prior period (+${pctChange}% change). Exceeds the +${Math.round((RISE_MULTIPLIER - 1) * 100)}% surge threshold with ≥${MIN_RECENT_VOLUME} tickets.`;
+}
+
+function buildSuggestedActions(category) {
+  const team = DEFAULT_TEAM_BY_CATEGORY[category] || 'Support Team';
+  switch (category) {
+    case 'Account Access':
+      return [
+        `Audit identity & authentication service logs for elevated 401/403 error rates.`,
+        `Check SSO provider and token validation endpoints for connectivity degradation.`,
+        `Notify ${team} to inspect potential credential stuffing or expired certs.`,
+      ].join('\n');
+    case 'Bug':
+      return [
+        `Inspect error logs from recent software releases or deployments.`,
+        `Identify common client versions, devices, or operating systems reported in tickets.`,
+        `Brief ${team} lead on incoming error patterns for priority triage.`,
+      ].join('\n');
+    case 'Performance':
+      return [
+        `Review database slow query logs and API endpoint P95/P99 latency trends.`,
+        `Check server CPU, memory, and connection pool saturation.`,
+        `Coordinate with ${team} to evaluate scaling or caching adjustments.`,
+      ].join('\n');
+    case 'Billing Problem':
+      return [
+        `Inspect payment gateway webhooks for batch declined or duplicate transactions.`,
+        `Audit recent automated recurring billing runs and invoice generations.`,
+        `Alert ${team} to prioritize pending billing disputes.`,
+      ].join('\n');
+    case 'Security Concern':
+      return [
+        `Immediately escalate to Security Operations and ${team}.`,
+        `Analyze source IP addresses and affected user accounts for suspicious activity.`,
+        `Consider enforcing temporary MFA re-authentication if credentials were exposed.`,
+      ].join('\n');
+    default:
+      return [
+        `Review recent incident tickets to identify emerging root causes.`,
+        `Engage ${team} for cross-functional investigation.`,
+        `Monitor ticket velocity over the next 24-48 hours.`,
+      ].join('\n');
+  }
 }
 
 export function computeRiskScores(now = new Date()) {
@@ -48,6 +103,8 @@ export function computeRiskScores(now = new Date()) {
         (priorCount === 0 || recentCount >= priorCount * RISE_MULTIPLIER);
 
       const recommendation = buildRecommendation(category, recentCount, priorCount, rising);
+      const calculationDetails = buildCalculationDetails(recentCount, priorCount, rising);
+      const suggestedActions = rising ? buildSuggestedActions(category) : null;
 
       const row = {
         category,
@@ -55,6 +112,8 @@ export function computeRiskScores(now = new Date()) {
         priorCount,
         rising: rising ? 1 : 0,
         recommendation,
+        calculationDetails,
+        suggestedActions,
         computedAt,
       };
       insertRiskScoreStmt.run(row);
@@ -72,5 +131,34 @@ export function getLatestRiskScores() {
   const scores = db
     .prepare('SELECT * FROM risk_scores WHERE computedAt = ? ORDER BY rising DESC, recentCount DESC')
     .all(latest.computedAt);
-  return { computedAt: latest.computedAt, scores: scores.map((s) => ({ ...s, rising: !!s.rising })) };
+  return {
+    computedAt: latest.computedAt,
+    scores: scores.map((s) => ({
+      ...s,
+      rising: !!s.rising,
+      suggestedActionsList: s.suggestedActions ? s.suggestedActions.split('\n') : [],
+    })),
+  };
 }
+
+export function getSupportingTicketsForRisk(category, days = 7, team = null) {
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  const clauses = ['category = ?', 'submittedAt >= ?'];
+  const params = [category, since];
+  if (team && team !== 'all' && team !== 'All') {
+    clauses.push('team = ?');
+    params.push(team);
+  }
+
+  return db
+    .prepare(
+      `SELECT id, title, description, category, severity, team, confidence, status, submittedAt,
+              affectedSystem, environment, errorDetails, reproductionSteps, aiReasoning, needsReview
+       FROM tickets
+       WHERE ${clauses.join(' AND ')}
+       ORDER BY submittedAt DESC
+       LIMIT 50`
+    )
+    .all(...params);
+}
+
