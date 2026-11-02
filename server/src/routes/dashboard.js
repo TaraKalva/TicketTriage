@@ -1,7 +1,11 @@
 import { Router } from 'express';
 import db from '../db/index.js';
 import { CATEGORIES } from '../services/aiTriage.js';
-import { getLatestRiskScores, getSupportingTicketsForRisk } from '../services/riskAnalysis.js';
+import {
+  getLatestRiskScores,
+  getSupportingTicketsForRisk,
+  getRiskScoresForWindow,
+} from '../services/riskAnalysis.js';
 import { getLatestPrediction, generateNextTicketPrediction } from '../services/predictionService.js';
 import { runAnalysisNow, runFullAnalysisNow } from '../jobs/scheduledAnalysis.js';
 
@@ -115,7 +119,8 @@ router.get('/summary', (req, res) => {
     .filter((c) => c.avgResolutionMinutes != null && c.resolved >= 2)
     .sort((a, b) => a.avgResolutionMinutes - b.avgResolutionMinutes)[0] ?? null;
 
-  const { computedAt, scores } = getLatestRiskScores();
+  const riskDays = numDays || 30;
+  const { computedAt, scores } = getRiskScoresForWindow(riskDays, hasTeamFilter ? team : null);
   const prediction = getLatestPrediction();
 
   res.json({

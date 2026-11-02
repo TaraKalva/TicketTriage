@@ -141,6 +141,65 @@ export function getLatestRiskScores() {
   };
 }
 
+export function getRiskScoresForWindow(days = 7, team = null) {
+  const periodDays = Math.max(1, Number(days) || 7);
+  const now = new Date();
+  const nowMs = now.getTime();
+  const recentStart = new Date(nowMs - periodDays * 86400000).toISOString();
+  const priorStart = new Date(nowMs - 2 * periodDays * 86400000).toISOString();
+  const nowIso = now.toISOString();
+
+  const teamClause = team && team !== 'all' && team !== 'All' ? 'AND team = ?' : '';
+  const teamParams = team && team !== 'all' && team !== 'All' ? [team] : [];
+
+  const scores = [];
+  for (const category of CATEGORIES) {
+    const recentRow = db
+      .prepare(`SELECT COUNT(*) as count FROM tickets WHERE category = ? AND submittedAt >= ? AND submittedAt < ? ${teamClause}`)
+      .get(category, recentStart, nowIso, ...teamParams);
+    const priorRow = db
+      .prepare(`SELECT COUNT(*) as count FROM tickets WHERE category = ? AND submittedAt >= ? AND submittedAt < ? ${teamClause}`)
+      .get(category, priorStart, recentStart, ...teamParams);
+
+    const recentCount = recentRow?.count ?? 0;
+    const priorCount = priorRow?.count ?? 0;
+    if (recentCount === 0 && priorCount === 0) continue;
+
+    const rising =
+      recentCount >= MIN_RECENT_VOLUME &&
+      (priorCount === 0 || recentCount >= priorCount * RISE_MULTIPLIER);
+
+    const pctChange = priorCount > 0 ? Math.round(((recentCount - priorCount) / priorCount) * 100) : 100;
+    const recommendation = rising
+      ? priorCount === 0
+        ? `Proactive review of ${category} recommended — ${recentCount} ticket(s) in the last ${periodDays} days with none in the prior period.`
+        : `Proactive review of ${category} recommended — volume is up ${pctChange}% vs. the prior ${periodDays}-day period (${priorCount} → ${recentCount}).`
+      : null;
+
+    const calculationDetails = rising
+      ? `Volume surge calculation: ${recentCount} tickets in past ${periodDays} days vs ${priorCount} in prior period (+${pctChange}% change). Exceeds the +${Math.round((RISE_MULTIPLIER - 1) * 100)}% surge threshold with ≥${MIN_RECENT_VOLUME} tickets.`
+      : `Standard volume baseline: ${recentCount} ticket(s) in last ${periodDays}d vs ${priorCount} in prior ${periodDays}d. No anomalous spike detected.`;
+
+    const suggestedActions = rising ? buildSuggestedActions(category) : null;
+
+    scores.push({
+      category,
+      recentCount,
+      priorCount,
+      rising,
+      recommendation,
+      calculationDetails,
+      suggestedActions,
+      suggestedActionsList: suggestedActions ? suggestedActions.split('\n') : [],
+      periodDays,
+      computedAt: nowIso,
+    });
+  }
+
+  scores.sort((a, b) => (b.rising ? 1 : 0) - (a.rising ? 1 : 0) || b.recentCount - a.recentCount);
+  return { computedAt: nowIso, scores, periodDays };
+}
+
 export function getSupportingTicketsForRisk(category, days = 7, team = null) {
   const since = new Date(Date.now() - days * 86400000).toISOString();
   const clauses = ['category = ?', 'submittedAt >= ?'];
