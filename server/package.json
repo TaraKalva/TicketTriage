@@ -9,7 +9,8 @@
     "start": "node src/index.js",
     "import-data": "node src/db/importDataset.js --clear",
     "generate-traffic": "node src/db/generateTraffic.js",
-    "fetch:kaggle": "cd .. && (./.venv/bin/python scripts/pull_kaggle_data.py || python3 scripts/pull_kaggle_data.py)"
+    "seed": "node src/db/importDataset.js --clear && node src/db/generateTraffic.js",
+    "fetch:kaggle": "node -e \"const { execSync } = require('child_process'); try { execSync('python3 ../scripts/pull_kaggle_data.py', {stdio: 'inherit'}); } catch { try { execSync('python ../scripts/pull_kaggle_data.py', {stdio: 'inherit'}); } catch { execSync('py ../scripts/pull_kaggle_data.py', {stdio: 'inherit'}); } }\""
   },
   "dependencies": {
     "@google/genai": "^2.23.0",

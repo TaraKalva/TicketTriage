@@ -198,7 +198,14 @@ const SEVERITY_RULES = [
   { severity: 'Low', keywords: ['minor', 'cosmetic', 'small issue', 'when you get a chance', 'no rush', 'just wondering', 'typo', 'feedback'] },
 ];
 
-function classifyWithRules(payload) {
+export function classifyWithRules(input) {
+  const payload = typeof input === 'string' ? { description: input, affectedSystem: '', environment: '', errorDetails: '', reproductionSteps: '' } : {
+    description: input.description || '',
+    affectedSystem: input.affectedSystem || '',
+    environment: input.environment || '',
+    errorDetails: input.errorDetails || '',
+    reproductionSteps: input.reproductionSteps || '',
+  };
   const fullText = `${payload.description} ${payload.errorDetails} ${payload.reproductionSteps} ${payload.affectedSystem}`.toLowerCase();
   const descWords = payload.description.trim().split(/\s+/).filter(Boolean);
 

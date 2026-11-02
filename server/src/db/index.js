@@ -109,10 +109,28 @@ addColumnIfNotExists('risk_scores', 'calculationDetails', 'TEXT');
 addColumnIfNotExists('risk_scores', 'suggestedActions', 'TEXT');
 
 
-export function ensureDataOptimizedAndCurrent() {
+export async function ensureDataOptimizedAndCurrent() {
   try {
     const row = db.prepare('SELECT MAX(submittedAt) as maxDate, COUNT(*) as count FROM tickets').get();
-    if (!row || !row.maxDate || row.count === 0) return;
+    
+    // On a fresh clone where SQLite is initialized but empty, auto-seed from synthetic_it_support_tickets.csv
+    if (!row || row.count === 0) {
+      const csvPath = path.join(dataDir, 'synthetic_it_support_tickets.csv');
+      if (fs.existsSync(csvPath)) {
+        console.log('[db] Fresh installation detected (0 tickets). Automatically seeding dataset from CSV...');
+        const { importDataset } = await import('./importDataset.js');
+        const { generateTraffic } = await import('./generateTraffic.js');
+        const { runAnalysisNow } = await import('../jobs/scheduledAnalysis.js');
+        const { generateNextTicketPrediction } = await import('../services/predictionService.js');
+
+        importDataset({ csvPath });
+        await generateTraffic();
+        runAnalysisNow();
+        await generateNextTicketPrediction().catch(() => {});
+        console.log('[db] Database auto-seeding completed successfully.');
+      }
+      return;
+    }
 
     const maxMs = new Date(row.maxDate).getTime();
     const nowMs = Date.now();

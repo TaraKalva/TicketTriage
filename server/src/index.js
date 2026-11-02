@@ -24,8 +24,8 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`TicketLens API listening on http://localhost:${PORT}`);
-  ensureDataOptimizedAndCurrent();
+  await ensureDataOptimizedAndCurrent();
   startScheduledAnalysis();
 });

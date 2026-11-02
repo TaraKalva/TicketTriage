@@ -14,55 +14,51 @@ predicts the next likely incoming ticket from recent trends.
 
 ## Getting started
 
+TicketLens is designed to work out-of-the-box on both **macOS** and **Windows** with Node.js 18+.
+
+### 1. Install dependencies
+
 ```bash
-npm run install:all   # installs server + client dependencies
+npm install
 ```
+*(Runs a postinstall script that installs root, backend, and frontend packages automatically).*
 
-Configure AI (optional):
+### 2. Configure AI (Optional)
 
 ```bash
+# macOS/Linux:
 cp server/.env.example server/.env
-# then edit server/.env and set GEMINI_API_KEY (free — https://aistudio.google.com/apikey)
-# or OPENAI_API_KEY
+
+# Windows (Command Prompt):
+copy server\.env.example server\.env
+
+# Windows (PowerShell):
+cp server/.env.example server/.env
 ```
 
-If no key is set, the triage engine automatically falls back to a keyword-based rule classifier —
-useful for demos and development. Ambiguous/short descriptions get lower confidence and land in the
-review queue either way.
+Edit `server/.env` and add your **GEMINI_API_KEY** (get a free key at [Google AI Studio](https://aistudio.google.com/apikey)) or `OPENAI_API_KEY`.
 
-Import the ticket dataset (required for first run — the dashboard, risk flags, and predictions all
-depend on historical data):
+> **Note:** If no AI key is configured, TicketLens automatically runs using its high-speed built-in keyword rule classifier, allowing full end-to-end functionality offline without external dependencies.
 
-```bash
-npm run --prefix server import-data
-```
-
-This maps the CSV's `issue_type` / `priority` / `product_area` columns onto TicketLens's schema and
-time-shifts the whole dataset so its most recent ticket lands "today" — this keeps the real
-burst/density patterns in the data intact, which is what makes the 7-day risk trend and the "last 14
-days" volume chart show something meaningful instead of empty history.
-
-Optionally, add a large batch of realistic *live* traffic on top of the imported historical data:
-
-```bash
-npm run --prefix server generate-traffic
-```
-
-Unlike the CSV import (which bulk-inserts pre-labeled ground truth), this runs every generated ticket
-through the real `triageTicket()` pipeline — the same code path the API uses — so confidence scores and
-`needsReview` flags are authentic. It mixes clear, keyword-rich descriptions (which mostly auto-route)
-with a smaller batch of deliberately vague ones (which land in the Review Queue), and spreads them over
-the last ~30 days so the risk-trend job and next-ticket predictor have much richer, more recent signal
-to work with. Defaults to 1,400 clear + 60 vague tickets — override with `--clear-count=N --vague-count=N`.
-
-Run both apps together:
+### 3. Run the application
 
 ```bash
 npm run dev
 ```
 
-- API: http://localhost:4000
-- App: http://localhost:5173 (Vite proxies `/api` to the backend)
+- **Web Application:** http://localhost:5173 (Vite auto-proxies `/api` requests to backend)
+- **API Server:** http://localhost:4000
+- **Health Check:** http://localhost:4000/api/health
+
+> **Auto-Seeding:** On first run after cloning, the server automatically initializes SQLite, imports the bundled `server/data/synthetic_it_support_tickets.csv` (100k tickets), seeds active review queue tickets, and computes baseline risk analytics in ~2 seconds. No manual database setup required!
+
+### Optional Manual Seed / Reset
+
+To manually re-import or reset the dataset at any time:
+
+```bash
+npm run seed
+```
 
 ## How it works
 

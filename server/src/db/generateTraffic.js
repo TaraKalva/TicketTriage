@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import db from './index.js';
-import { triageTicket, getConfidenceThreshold } from '../services/aiTriage.js';
+import { triageTicket, getConfidenceThreshold, classifyWithRules } from '../services/aiTriage.js';
 
 // Adds a large batch of realistic "live" tickets on top of the imported historical dataset.
 // Unlike importDataset.js (which bulk-inserts pre-labeled ground truth), every ticket here is
@@ -139,17 +139,17 @@ function resolveOutcome(submittedAt, forceOpen) {
   return { status: 'resolved', resolvedAt: resolvedAt.toISOString(), resolutionMinutes };
 }
 
-async function run() {
-  console.log(`Generating ${CLEAR_COUNT} clear + ${VAGUE_COUNT} vague tickets through the live triage pipeline...`);
+export async function generateTraffic(clearCount = CLEAR_COUNT, vagueCount = VAGUE_COUNT) {
+  console.log(`Generating ${clearCount} clear + ${vagueCount} vague tickets through the live triage pipeline...`);
   const rows = [];
   let flagged = 0;
   const threshold = getConfidenceThreshold();
 
-  for (let i = 0; i < CLEAR_COUNT; i++) {
+  for (let i = 0; i < clearCount; i++) {
     const category = pick(TEMPLATE_CATEGORIES);
     const description = pick(TEMPLATES[category])();
     const submittedAt = randomTimestamp(30, 1.4);
-    const ai = await triageTicket(description);
+    const ai = classifyWithRules(description);
     const needsReview = ai.confidence < threshold;
     if (needsReview) flagged++;
     const { status, resolvedAt, resolutionMinutes } = resolveOutcome(submittedAt, needsReview);
@@ -172,13 +172,13 @@ async function run() {
       resolvedAt,
       resolutionMinutes,
     });
-    if ((i + 1) % 200 === 0) console.log(`  ...${i + 1}/${CLEAR_COUNT} clear tickets triaged`);
+    if ((i + 1) % 400 === 0) console.log(`  ...${i + 1}/${clearCount} clear tickets triaged`);
   }
 
-  for (let i = 0; i < VAGUE_COUNT; i++) {
+  for (let i = 0; i < vagueCount; i++) {
     const description = pick(VAGUE_DESCRIPTIONS);
     const submittedAt = randomTimestamp(4, 1);
-    const ai = await triageTicket(description);
+    const ai = classifyWithRules(description);
     const needsReview = ai.confidence < threshold;
     if (needsReview) flagged++;
     rows.push({
@@ -208,6 +208,9 @@ async function run() {
   insertAll(rows);
 
   console.log(`Inserted ${rows.length} tickets. ${flagged} flagged needsReview (confidence < ${threshold}).`);
+  return { total: rows.length, flagged };
 }
 
-run();
+if (process.argv[1] && process.argv[1].endsWith('generateTraffic.js')) {
+  generateTraffic().catch(console.error);
+}

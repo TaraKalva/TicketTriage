@@ -65,22 +65,22 @@ const insertStmt = db.prepare(`
   )
 `);
 
-function run() {
-  const { clear, limit, csvPath } = parseArgs(process.argv.slice(2));
+export function importDataset(options = {}) {
+  const { clear = false, limit = null, csvPath = DEFAULT_CSV_PATH } = options;
 
   if (!fs.existsSync(csvPath)) {
     if (csvPath === DEFAULT_CSV_PATH) {
       console.log(`Dataset CSV not found at ${csvPath}. Fetching from Kaggle via kagglehub...`);
       try {
         const scriptPath = path.join(__dirname, '..', '..', '..', 'scripts', 'pull_kaggle_data.py');
-        execSync(`python3 "${scriptPath}"`, { stdio: 'inherit' });
+        const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+        execSync(`${pythonCmd} "${scriptPath}"`, { stdio: 'inherit' });
       } catch (err) {
         console.error('Failed to fetch dataset from Kaggle automatically:', err.message);
-        process.exit(1);
+        throw err;
       }
     } else {
-      console.error(`Dataset CSV not found at ${csvPath}`);
-      process.exit(1);
+      throw new Error(`Dataset CSV not found at ${csvPath}`);
     }
   }
 
@@ -98,9 +98,6 @@ function run() {
     console.log('Cleared existing tickets, risk scores, and predictions.');
   }
 
-  // Time-shift the whole dataset so its most recent ticket lands "now" — this keeps the
-  // relative density/bursts of the real data intact, which makes the recent-vs-prior-period
-  // risk trend detection and the "last 14 days" volume chart meaningful instead of empty.
   const originalDates = rows.map((r) => new Date(r.created_at).getTime()).filter((t) => Number.isFinite(t));
   const maxOriginal = Math.max(...originalDates);
   const shiftMs = Date.now() - maxOriginal;
@@ -151,6 +148,19 @@ function run() {
 
   insertAll(rows);
   console.log(`Imported ${rows.length - skipped} tickets${skipped ? ` (skipped ${skipped} unmappable rows)` : ''}.`);
+  return { total: rows.length - skipped, skipped };
 }
 
-run();
+function run() {
+  const args = parseArgs(process.argv.slice(2));
+  try {
+    importDataset(args);
+  } catch (err) {
+    console.error('Import failed:', err.message);
+    process.exit(1);
+  }
+}
+
+if (process.argv[1] && process.argv[1].endsWith('importDataset.js')) {
+  run();
+}
